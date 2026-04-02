@@ -1,0 +1,49 @@
+body {
+  margin: 0;
+  font-family: Arial;
+  background: #0f172a;
+  color: white;
+}
+
+.container {
+  padding: 20px;
+}
+
+header {
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.main {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+}
+
+.video-section {
+  position: relative;
+}
+
+video, canvas {
+  width: 640px;
+  height: 360px;
+  border-radius: 10px;
+  border: 2px solid white;
+}
+
+canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.panel {
+  width: 250px;
+  background: #1e293b;
+  padding: 15px;
+  border-radius: 10px;
+}
+
+.panel h2 {
+  margin-top: 0;
+}
