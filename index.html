@@ -2,32 +2,44 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>DRS Desktop</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DRS System</title>
   <link rel="stylesheet" href="style.css" />
+
+  <!-- ✅ FIX 2: face-api.js must be loaded BEFORE script.js -->
+  <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js"></script>
 </head>
 <body>
 
   <div class="container">
-    
+
     <header>
       <h1>🏏 DRS System</h1>
     </header>
 
+    <!-- ✅ FIX 3: Start button so camera triggers from user tap -->
+    <button id="startBtn" onclick="startApp()">▶ Start Camera</button>
+
     <div class="main">
       <div class="video-section">
-        <video id="video" autoplay playsinline></video>
-        <canvas id="canvas"></canvas>
+
+        <!-- ✅ FIX 1: Added muted — required for autoplay on Android -->
+        <video id="video" autoplay playsinline muted></video>
+
+        <!-- ✅ FIX 4: id changed from "canvas" to "overlay" to match script.js -->
+        <canvas id="overlay"></canvas>
+
       </div>
 
       <div class="panel">
         <h2>Live Stats</h2>
-        <p>Status: <span id="status">Starting...</span></p>
-        <p>Speed: <span id="speed">0</span> km/h</p>
+        <p id="result">Tap Start Camera to begin</p>
       </div>
     </div>
 
   </div>
 
-  <script src="app.js"></script>
+  <!-- ✅ script.js loads AFTER face-api.js -->
+  <script src="script.js"></script>
 </body>
 </html>
