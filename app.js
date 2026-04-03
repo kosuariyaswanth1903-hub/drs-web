@@ -1,157 +1,167 @@
 const video = document.getElementById("video");
-const canvas = document.getElementById("canvas");
-const ctx = canvas.getContext("2d");
+const result = document.getElementById("result");
+const canvas = document.getElementById("overlay");
 
-const statusText = document.getElementById("status");
-const speedText = document.getElementById("speed");
+const MODEL_URL = "https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model";
 
-let trajectory = [];
-let loopStarted = false;
+// ✅ FIX 1: Mobile needs facingMode + proper error messages
+async function startCamera() {
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+                facingMode: "user",   // front camera for face recognition
+                width: { ideal: 640 },
+                height: { ideal: 480 }
+            }
+        });
 
-// ✅ FIX 1: Added facingMode + error messages for mobile
-async function startApp() {
-  document.getElementById("startBtn").disabled = true;
-  statusText.innerText = "Starting...";
+        video.srcObject = stream;
 
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    statusText.innerText = "Camera not supported on this browser";
-    return;
-  }
+        await new Promise(resolve => {
+            video.onloadedmetadata = () => {
+                video.play();
+                resolve();
+            };
+        });
 
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: {
-        facingMode: { ideal: "environment" }, // ✅ uses back camera on mobile
-        width:  { ideal: 1280 },
-        height: { ideal: 720 }
-      }
+        result.innerText = "✅ Camera ready. Loading models...";
+
+    } catch (err) {
+        // ✅ Show exact error so you know what's wrong
+        if (err.name === "NotAllowedError") {
+            result.innerText = "❌ Camera blocked — tap the 🔒 lock icon and allow camera";
+        } else if (err.name === "NotFoundError") {
+            result.innerText = "❌ No camera found on this device";
+        } else if (err.name === "NotReadableError") {
+            result.innerText = "❌ Camera is being used by another app";
+        } else {
+            result.innerText = "❌ Camera error: " + err.name;
+        }
+        console.error(err);
+    }
+}
+
+// LOAD MODELS FROM CDN
+async function loadModels() {
+    result.innerText = "⏳ Loading model 1/3...";
+    await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+
+    result.innerText = "⏳ Loading model 2/3...";
+    await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
+
+    result.innerText = "⏳ Loading model 3/3...";
+    await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
+
+    result.innerText = "✅ Models loaded!";
+}
+
+// LOAD STUDENT FACES
+async function loadStudentFaces() {
+    const labels = ["yash", "nikhil", "charan"];
+    const labeledDescriptors = [];
+
+    const options = new faceapi.TinyFaceDetectorOptions({
+        inputSize: 320,
+        scoreThreshold: 0.3
     });
 
-    video.srcObject = stream;
-    statusText.innerText = "Camera Started";
+    for (const label of labels) {
+        result.innerText = `⏳ Loading face: ${label}...`;
+        try {
+            const img = await faceapi.fetchImage(`./students/${label}.jpg`);
 
-    canvas.width  = 640;
-    canvas.height = 360;
+            const detection = await faceapi
+                .detectSingleFace(img, options)
+                .withFaceLandmarks()
+                .withFaceDescriptor();
 
-  } catch (err) {
-    document.getElementById("startBtn").disabled = false;
+            if (!detection) {
+                console.warn(`⚠️ No face found in ${label}.jpg`);
+                continue;
+            }
 
-    if (err.name === "NotAllowedError") {
-      statusText.innerText = "❌ Permission Denied — allow camera in browser settings";
-    } else if (err.name === "NotFoundError") {
-      statusText.innerText = "❌ No camera found on this device";
-    } else if (err.name === "NotReadableError") {
-      statusText.innerText = "❌ Camera in use by another app";
-    } else {
-      statusText.innerText = "❌ Error: " + err.name;
+            labeledDescriptors.push(
+                new faceapi.LabeledFaceDescriptors(label, [detection.descriptor])
+            );
+            console.log(`✅ Loaded: ${label}`);
+
+        } catch (err) {
+            console.error(`❌ Error loading ${label}.jpg:`, err);
+        }
     }
-    console.error(err);
-  }
+
+    return labeledDescriptors;
 }
 
-// ✅ FIX 3: Use 'canplay' instead of 'loadeddata' — more reliable on Android
-video.addEventListener("canplay", () => {
-  if (!loopStarted) {
-    loopStarted = true;
-    statusText.innerText = "Tracking...";
-    loop();
-  }
-});
+// FACE RECOGNITION LOOP
+async function startRecognition() {
+    const labeledDescriptors = await loadStudentFaces();
 
-// 🎯 Ball Detection (bright pixels)
-function detectBall() {
-  // ✅ FIX 2: Canvas already has video drawn before this is called (see loop order)
-  let frame;
-  try {
-    frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  } catch (e) {
-    return null; // CORS safety
-  }
-
-  let sumX = 0, sumY = 0, count = 0;
-
-  for (let y = 0; y < canvas.height; y += 4) {
-    for (let x = 0; x < canvas.width; x += 4) {
-      const i = (y * canvas.width + x) * 4;
-      const r = frame.data[i];
-      const g = frame.data[i + 1];
-      const b = frame.data[i + 2];
-
-      if (r > 200 && g > 200 && b > 200) {
-        sumX += x;
-        sumY += y;
-        count++;
-      }
+    if (labeledDescriptors.length === 0) {
+        result.innerText = "❌ No reference faces loaded. Check student photos.";
+        return;
     }
-  }
 
-  if (count === 0) return null;
+    const faceMatcher = new faceapi.FaceMatcher(labeledDescriptors, 0.6);
+    result.innerText = `✅ System ready (${labeledDescriptors.length} students). Look at the camera.`;
 
-  return {
-    x: sumX / count,
-    y: sumY / count,
-    time: Date.now()
-  };
+    const detectionOptions = new faceapi.TinyFaceDetectorOptions({
+        inputSize: 320,
+        scoreThreshold: 0.3
+    });
+
+    setInterval(async () => {
+        if (video.readyState < 2 || video.paused) return;
+
+        const size = {
+            width: video.videoWidth || 640,
+            height: video.videoHeight || 480
+        };
+        faceapi.matchDimensions(canvas, size);
+
+        const detections = await faceapi
+            .detectAllFaces(video, detectionOptions)
+            .withFaceLandmarks()
+            .withFaceDescriptors();
+
+        const resized = faceapi.resizeResults(detections, size);
+        const ctx = canvas.getContext("2d");
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        if (detections.length === 0) {
+            result.innerText = "👀 No face detected";
+            return;
+        }
+
+        faceapi.draw.drawDetections(canvas, resized);
+
+        const names = detections.map(d => {
+            const match = faceMatcher.findBestMatch(d.descriptor);
+            return match.label !== "unknown"
+                ? `✅ ${match.label} — DCME-B`
+                : "❌ Unknown face";
+        });
+
+        result.innerText = names.join("  |  ");
+
+    }, 700);
 }
 
-// 🎯 Track Ball
-function trackBall(ball) {
-  trajectory.push(ball);
-  if (trajectory.length > 30) trajectory.shift();
+// ✅ FIX 2: Don't auto-run on page load — wait for button click
+// Your HTML already has: <button onclick="startApp()">Start Camera</button>
+// So we just define startApp() here instead of calling init() automatically
+
+async function startApp() {
+    const btn = document.getElementById("startBtn");
+    if (btn) btn.disabled = true;  // prevent double-tap
+
+    await startCamera();
+
+    // Only continue if camera actually started
+    if (!video.srcObject) return;
+
+    await loadModels();
+    startRecognition();
 }
 
-// ⚡ Speed Calculation
-function calculateSpeed() {
-  if (trajectory.length < 2) return 0;
-
-  const p1 = trajectory[trajectory.length - 2];
-  const p2 = trajectory[trajectory.length - 1];
-
-  const dx = p2.x - p1.x;
-  const dy = p2.y - p1.y;
-  const dist = Math.sqrt(dx * dx + dy * dy);
-  const time = (p2.time - p1.time) / 1000;
-
-  if (time === 0) return 0;
-  return Math.round((dist / time) * 0.1);
-}
-
-// 🖥️ Draw Trajectory + Ball Dot
-function drawUI(ball) {
-  if (trajectory.length > 1) {
-    ctx.beginPath();
-    ctx.moveTo(trajectory[0].x, trajectory[0].y);
-    for (let i = 1; i < trajectory.length; i++) {
-      ctx.lineTo(trajectory[i].x, trajectory[i].y);
-    }
-    ctx.strokeStyle = "yellow";
-    ctx.lineWidth = 2;
-    ctx.stroke();
-  }
-
-  if (ball) {
-    ctx.beginPath();
-    ctx.arc(ball.x, ball.y, 6, 0, Math.PI * 2);
-    ctx.fillStyle = "red";
-    ctx.fill();
-  }
-}
-
-// ✅ FIX 2: drawImage FIRST, then detect — correct order
-function loop() {
-  ctx.drawImage(video, 0, 0, canvas.width, canvas.height); // draw first
-
-  const ball = detectBall(); // then read pixels
-
-  if (ball) {
-    statusText.innerText = "Ball Detected ✅";
-    trackBall(ball);
-  } else {
-    statusText.innerText = "Tracking...";
-  }
-
-  speedText.innerText = calculateSpeed();
-  drawUI(ball);
-
-  requestAnimationFrame(loop);
-}
+// ✅ REMOVED: init() — no longer auto-starts on page load
