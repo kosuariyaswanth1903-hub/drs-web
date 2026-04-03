@@ -2,47 +2,50 @@ const video = document.getElementById("video");
 const result = document.getElementById("result");
 const canvas = document.getElementById("overlay");
 
-const MODEL_URL = "https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model";
+const MODEL_URL = "https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/weights";
 
-// ✅ FIX 1: Mobile needs facingMode + proper error messages
-async function startCamera() {
-    try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-            video: {
-                facingMode: "user",   // front camera for face recognition
-                width: { ideal: 640 },
-                height: { ideal: 480 }
-            }
-        });
+async function startApp() {
+  // Disable button to prevent double tap
+  const btn = document.getElementById("startBtn");
+  btn.disabled = true;
+  btn.innerText = "Loading...";
 
-        video.srcObject = stream;
+  result.innerText = "🎥 Starting camera...";
 
-        await new Promise(resolve => {
-            video.onloadedmetadata = () => {
-                video.play();
-                resolve();
-            };
-        });
+  // STEP 1: Start Camera
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "user" }
+    });
+    video.srcObject = stream;
 
-        result.innerText = "✅ Camera ready. Loading models...";
+    await new Promise(resolve => {
+      video.onloadedmetadata = () => {
+        video.play();
+        resolve();
+      };
+    });
 
-    } catch (err) {
-        // ✅ Show exact error so you know what's wrong
-        if (err.name === "NotAllowedError") {
-            result.innerText = "❌ Camera blocked — tap the 🔒 lock icon and allow camera";
-        } else if (err.name === "NotFoundError") {
-            result.innerText = "❌ No camera found on this device";
-        } else if (err.name === "NotReadableError") {
-            result.innerText = "❌ Camera is being used by another app";
-        } else {
-            result.innerText = "❌ Camera error: " + err.name;
-        }
-        console.error(err);
+    result.innerText = "✅ Camera ready! Loading AI models...";
+
+  } catch (err) {
+    btn.disabled = false;
+    btn.innerText = "▶ Start Camera";
+
+    if (err.name === "NotAllowedError") {
+      result.innerText = "❌ Camera blocked! Tap the 🔒 lock icon in address bar → allow camera → refresh";
+    } else if (err.name === "NotFoundError") {
+      result.innerText = "❌ No camera found on this device";
+    } else if (err.name === "NotReadableError") {
+      result.innerText = "❌ Camera busy — close other apps using camera";
+    } else {
+      result.innerText = "❌ Camera error: " + err.name + " — " + err.message;
     }
-}
+    return; // stop here if camera failed
+  }
 
-// LOAD MODELS FROM CDN
-async function loadModels() {
+  // STEP 2: Load AI Models
+  try {
     result.innerText = "⏳ Loading model 1/3...";
     await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
 
@@ -52,116 +55,91 @@ async function loadModels() {
     result.innerText = "⏳ Loading model 3/3...";
     await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
 
-    result.innerText = "✅ Models loaded!";
-}
+    result.innerText = "✅ Models loaded! Loading student faces...";
 
-// LOAD STUDENT FACES
-async function loadStudentFaces() {
-    const labels = ["yash", "nikhil", "charan"];
-    const labeledDescriptors = [];
+  } catch (err) {
+    result.innerText = "❌ Model loading failed: " + err.message;
+    return;
+  }
 
-    const options = new faceapi.TinyFaceDetectorOptions({
-        inputSize: 320,
-        scoreThreshold: 0.3
-    });
+  // STEP 3: Load Student Faces
+  const labels = ["yash", "nikhil", "charan"];
+  const labeledDescriptors = [];
 
-    for (const label of labels) {
-        result.innerText = `⏳ Loading face: ${label}...`;
-        try {
-            const img = await faceapi.fetchImage(`./students/${label}.jpg`);
+  const options = new faceapi.TinyFaceDetectorOptions({
+    inputSize: 320,
+    scoreThreshold: 0.3
+  });
 
-            const detection = await faceapi
-                .detectSingleFace(img, options)
-                .withFaceLandmarks()
-                .withFaceDescriptor();
+  for (const label of labels) {
+    result.innerText = `⏳ Loading face: ${label}...`;
+    try {
+      const img = await faceapi.fetchImage(`./students/${label}.jpg`);
+      const detection = await faceapi
+        .detectSingleFace(img, options)
+        .withFaceLandmarks()
+        .withFaceDescriptor();
 
-            if (!detection) {
-                console.warn(`⚠️ No face found in ${label}.jpg`);
-                continue;
-            }
+      if (!detection) {
+        console.warn(`⚠️ No face found in ${label}.jpg`);
+        continue;
+      }
 
-            labeledDescriptors.push(
-                new faceapi.LabeledFaceDescriptors(label, [detection.descriptor])
-            );
-            console.log(`✅ Loaded: ${label}`);
+      labeledDescriptors.push(
+        new faceapi.LabeledFaceDescriptors(label, [detection.descriptor])
+      );
+      console.log(`✅ Loaded: ${label}`);
 
-        } catch (err) {
-            console.error(`❌ Error loading ${label}.jpg:`, err);
-        }
+    } catch (err) {
+      console.error(`❌ Error loading ${label}.jpg:`, err);
+    }
+  }
+
+  if (labeledDescriptors.length === 0) {
+    result.innerText = "❌ No student faces loaded! Check your /students folder has yash.jpg, nikhil.jpg, charan.jpg";
+    return;
+  }
+
+  // STEP 4: Start Recognition Loop
+  const faceMatcher = new faceapi.FaceMatcher(labeledDescriptors, 0.6);
+  result.innerText = `✅ Ready! Recognising ${labeledDescriptors.length} students...`;
+
+  btn.innerText = "✅ Running";
+
+  setInterval(async () => {
+    if (video.readyState < 2 || video.paused) return;
+
+    const size = {
+      width: video.videoWidth || 640,
+      height: video.videoHeight || 480
+    };
+    faceapi.matchDimensions(canvas, size);
+
+    const detections = await faceapi
+      .detectAllFaces(video, options)
+      .withFaceLandmarks()
+      .withFaceDescriptors();
+
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    if (detections.length === 0) {
+      result.innerText = "👀 No face detected — look at the camera";
+      return;
     }
 
-    return labeledDescriptors;
-}
+    const resized = faceapi.resizeResults(detections, size);
+    faceapi.draw.drawDetections(canvas, resized);
+    faceapi.draw.drawFaceLandmarks(canvas, resized);
 
-// FACE RECOGNITION LOOP
-async function startRecognition() {
-    const labeledDescriptors = await loadStudentFaces();
-
-    if (labeledDescriptors.length === 0) {
-        result.innerText = "❌ No reference faces loaded. Check student photos.";
-        return;
-    }
-
-    const faceMatcher = new faceapi.FaceMatcher(labeledDescriptors, 0.6);
-    result.innerText = `✅ System ready (${labeledDescriptors.length} students). Look at the camera.`;
-
-    const detectionOptions = new faceapi.TinyFaceDetectorOptions({
-        inputSize: 320,
-        scoreThreshold: 0.3
+    const names = detections.map(d => {
+      const match = faceMatcher.findBestMatch(d.descriptor);
+      return match.label !== "unknown"
+        ? `✅ ${match.label} — DCME-B`
+        : "❌ Unknown face";
     });
 
-    setInterval(async () => {
-        if (video.readyState < 2 || video.paused) return;
+    result.innerText = names.join("  |  ");
 
-        const size = {
-            width: video.videoWidth || 640,
-            height: video.videoHeight || 480
-        };
-        faceapi.matchDimensions(canvas, size);
-
-        const detections = await faceapi
-            .detectAllFaces(video, detectionOptions)
-            .withFaceLandmarks()
-            .withFaceDescriptors();
-
-        const resized = faceapi.resizeResults(detections, size);
-        const ctx = canvas.getContext("2d");
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-        if (detections.length === 0) {
-            result.innerText = "👀 No face detected";
-            return;
-        }
-
-        faceapi.draw.drawDetections(canvas, resized);
-
-        const names = detections.map(d => {
-            const match = faceMatcher.findBestMatch(d.descriptor);
-            return match.label !== "unknown"
-                ? `✅ ${match.label} — DCME-B`
-                : "❌ Unknown face";
-        });
-
-        result.innerText = names.join("  |  ");
-
-    }, 700);
-}
-
-// ✅ FIX 2: Don't auto-run on page load — wait for button click
-// Your HTML already has: <button onclick="startApp()">Start Camera</button>
-// So we just define startApp() here instead of calling init() automatically
-
-async function startApp() {
-    const btn = document.getElementById("startBtn");
-    if (btn) btn.disabled = true;  // prevent double-tap
-
-    await startCamera();
-
-    // Only continue if camera actually started
-    if (!video.srcObject) return;
-
-    await loadModels();
-    startRecognition();
-}
-
-// ✅ REMOVED: init() — no longer auto-starts on page load
+  }, 700);
+          }
