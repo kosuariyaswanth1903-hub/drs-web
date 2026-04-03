@@ -1,38 +1,443 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>DRS System</title>
-  <link rel="stylesheet" href="style.css" />
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DRS System</title>
+
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: #0b1a1f;
+  color: white;
+  font-family: Arial, sans-serif;
+  text-align: center;
+  padding: 10px;
+}
+
+h2 { margin: 10px 0 12px; font-size: 22px; }
+
+.container {
+  max-width: 640px;
+  margin: auto;
+}
+
+/* ✅ FIX: canvas-wrap must have explicit height to overlay correctly */
+.canvas-wrap {
+  position: relative;
+  width: 100%;
+  background: #000;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+video {
+  width: 100%;
+  display: block;
+  border-radius: 10px;
+}
+
+canvas {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  pointer-events: none;
+  border-radius: 10px;
+}
+
+button {
+  margin-top: 12px;
+  padding: 14px 20px;
+  font-size: 18px;
+  font-weight: bold;
+  border: none;
+  border-radius: 10px;
+  background: gold;
+  color: #1a1a1a;
+  cursor: pointer;
+  width: 100%;
+  max-width: 640px;
+}
+
+button:active { opacity: 0.8; }
+
+.info {
+  margin-top: 10px;
+  background: #102028;
+  border-radius: 10px;
+  padding: 10px 14px;
+  max-width: 640px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.info p {
+  margin: 4px 0;
+  font-size: 15px;
+  color: #aaccd8;
+}
+
+.info span {
+  color: #FFD700;
+  font-weight: bold;
+}
+
+#errorBox {
+  margin-top: 10px;
+  background: #4a0000;
+  color: #ffaaaa;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 13px;
+  display: none;
+  white-space: pre-line;
+  line-height: 1.6;
+  max-width: 640px;
+  margin-left: auto;
+  margin-right: auto;
+}
+</style>
 </head>
+
 <body>
+<div class="container">
 
-  <div class="container">
+  <h2>🏏 DRS Tracking System</h2>
 
-    <header>
-      <h1>🏏 DRS System</h1>
-    </header>
-
-    <button id="startBtn" onclick="startApp()">▶ Start Camera</button>
-
-    <div class="main">
-      <div class="video-section">
-        <video id="video" autoplay playsinline muted></video>
-        <canvas id="overlay"></canvas>
-      </div>
-
-      <div class="panel">
-        <h2>Live Stats</h2>
-        <p id="result">Tap Start Camera to begin</p>
-      </div>
-    </div>
-
+  <div class="canvas-wrap">
+    <!-- ✅ FIX 1: Added muted — required for autoplay on Android -->
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="canvas"></canvas>
   </div>
 
-  <!-- face-api MUST load before script.js -->
-  <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
-  <script src="script.js"></script>
+  <button id="startBtn">📷 Start Camera</button>
+
+  <div class="info">
+    <p>Status: <span id="status">Ready</span></p>
+    <p>Speed: <span id="speed">0</span> km/h</p>
+    <p>Trail: <span id="trail">0</span> pts</p>
+  </div>
+
+  <div id="errorBox"></div>
+
+</div>
+
+<script>
+(function () {
+
+  const video      = document.getElementById("video");
+  const canvas     = document.getElementById("canvas");
+  const ctx        = canvas.getContext("2d");
+  const statusText = document.getElementById("status");
+  const speedText  = document.getElementById("speed");
+  const trailText  = document.getElementById("trail");
+  const errorBox   = document.getElementById("errorBox");
+  const startBtn   = document.getElementById("startBtn");
+
+  let trajectory = [];
+  let lastSpeed  = 0;
+  let running    = false;
+  let animId     = null;
+
+  // Offscreen canvas for reading pixels (avoids CORS issues)
+  const tempCanvas = document.createElement('canvas');
+  const tempCtx    = tempCanvas.getContext('2d');
+
+  // ── Button ────────────────────────────────────
+  startBtn.addEventListener('click', function () {
+    startCamera();
+  });
+
+  // ── Start Camera ─────────────────────────────
+  async function startCamera() {
+    errorBox.style.display = 'none';
+    startBtn.disabled      = true;
+    startBtn.textContent   = '⏳ Starting...';
+    statusText.textContent = 'Requesting camera...';
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      showError('Camera not supported.\nPlease use Chrome on Android.');
+      resetBtn();
+      return;
+    }
+
+    let stream;
+
+    // Try rear camera first, fallback to any
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' } }
+      });
+    } catch (e1) {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      } catch (e2) {
+        handleError(e2);
+        resetBtn();
+        return;
+      }
+    }
+
+    video.srcObject = stream;
+
+    // ✅ FIX 3: Wait properly for video to be ready
+    await new Promise(function (resolve) {
+      if (video.readyState >= 2) { resolve(); return; }
+      video.oncanplay = resolve;
+      setTimeout(resolve, 5000); // safety
+    });
+
+    try { await video.play(); } catch (e) { /* already playing */ }
+
+    // ✅ FIX 2: Set canvas size ONCE here, not every frame
+    canvas.width  = video.videoWidth  || 640;
+    canvas.height = video.videoHeight || 480;
+    tempCanvas.width  = canvas.width;
+    tempCanvas.height = canvas.height;
+
+    running              = true;
+    startBtn.textContent = '✅ Camera On';
+    statusText.textContent = 'Tracking...';
+
+    animId = requestAnimationFrame(loop);
+  }
+
+  // ── Main loop ─────────────────────────────────
+  function loop() {
+    if (!running) return;
+
+    // Only process when video is truly playing
+    if (video.readyState !== 4) {
+      animId = requestAnimationFrame(loop);
+      return;
+    }
+
+    // Draw video to offscreen canvas and read pixels
+    tempCtx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const frame = tempCtx.getImageData(0, 0, canvas.width, canvas.height);
+
+    // Detect ball
+    const ball = detectBall(frame, canvas.width, canvas.height);
+
+    if (ball) {
+      trajectory.push(ball);
+      if (trajectory.length > 30) trajectory.shift();
+      statusText.textContent = '🎯 Ball Detected';
+    } else {
+      statusText.textContent = '🔍 Tracking...';
+    }
+
+    const spd = calcSpeed();
+    speedText.textContent = spd;
+    trailText.textContent = trajectory.length;
+
+    draw(ball);
+
+    animId = requestAnimationFrame(loop);
+  }
+
+  // ── Ball detection ────────────────────────────
+  function detectBall(imageData, w, h) {
+    const data = imageData.data;
+    let best     = null;
+    let maxScore = 0;
+    let sumX = 0, sumY = 0, count = 0;
+
+    for (let y = 0; y < h; y += 4) {
+      for (let x = 0; x < w; x += 4) {
+
+        // Ignore screen edges (reduces noise)
+        if (x < 40 || x > w - 40) continue;
+
+        const i = (y * w + x) * 4;
+        const r = data[i];
+        const g = data[i + 1];
+        const b = data[i + 2];
+
+        const brightness = (r + g + b) / 3;
+        const variance   = Math.abs(r - g) + Math.abs(g - b) + Math.abs(b - r);
+
+        // White/bright ball
+        const isWhite  = brightness > 185 && variance < 60;
+        // Red ball
+        const isRed    = r > 170 && g < 80 && b < 80;
+        // Yellow ball
+        const isYellow = r > 200 && g > 170 && b < 80;
+
+        if (isWhite || isRed || isYellow) {
+          const score = brightness - variance * 0.4;
+          sumX += x; sumY += y; count++;
+          if (score > maxScore) {
+            maxScore = score;
+            best = { x, y };
+          }
+        }
+      }
+    }
+
+    // Need enough pixels to be sure
+    if (count < 5 || !best) return null;
+
+    // Use centroid for stability
+    const cx = sumX / count;
+    const cy = sumY / count;
+
+    // Smoothing with last known position
+    if (trajectory.length > 0) {
+      const last = trajectory[trajectory.length - 1];
+      const smoothX = (cx + last.x) / 2;
+      const smoothY = (cy + last.y) / 2;
+
+      // Ignore if barely moved (static noise)
+      if (Math.hypot(smoothX - last.x, smoothY - last.y) < 4) return null;
+
+      return { x: smoothX, y: smoothY, time: Date.now() };
+    }
+
+    return { x: cx, y: cy, time: Date.now() };
+  }
+
+  // ── Speed ─────────────────────────────────────
+  function calcSpeed() {
+    if (trajectory.length < 2) return 0;
+    const p1   = trajectory[trajectory.length - 2];
+    const p2   = trajectory[trajectory.length - 1];
+    const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+    const time = (p2.time - p1.time) / 1000;
+    if (time <= 0) return Math.round(lastSpeed);
+    let spd = (dist / time) * 0.3;
+    // Smooth speed
+    spd       = lastSpeed * 0.7 + spd * 0.3;
+    lastSpeed = Math.min(220, Math.max(0, spd));
+    return Math.round(lastSpeed);
+  }
+
+  // ── Prediction ────────────────────────────────
+  function predict() {
+    if (trajectory.length < 3) return [];
+    const p2 = trajectory[trajectory.length - 2];
+    const p3 = trajectory[trajectory.length - 1];
+    let vx = p3.x - p2.x;
+    let vy = p3.y - p2.y;
+    const gravity = 0.5;
+    const pts = [];
+    let x = p3.x, y = p3.y;
+    for (let i = 0; i < 18; i++) {
+      x += vx;
+      vy += gravity;
+      y += vy;
+      pts.push({ x, y });
+      if (y > canvas.height) break;
+    }
+    return pts;
+  }
+
+  // ── Draw ──────────────────────────────────────
+  function draw(ball) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Trail line
+    if (trajectory.length > 1) {
+      ctx.beginPath();
+      ctx.strokeStyle = '#FFD700';
+      ctx.lineWidth   = 2.5;
+      ctx.lineCap     = 'round';
+      ctx.lineJoin    = 'round';
+      ctx.moveTo(trajectory[0].x, trajectory[0].y);
+      for (const p of trajectory) ctx.lineTo(p.x, p.y);
+      ctx.stroke();
+
+      // Trail dots
+      for (let i = 0; i < trajectory.length; i++) {
+        const alpha = 0.3 + (i / trajectory.length) * 0.7;
+        ctx.beginPath();
+        ctx.arc(trajectory[i].x, trajectory[i].y, 3, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255, 200, 50, ${alpha})`;
+        ctx.fill();
+      }
+    }
+
+    // Prediction (dashed cyan)
+    const pred = predict();
+    if (pred.length > 0) {
+      const last = trajectory[trajectory.length - 1];
+      ctx.beginPath();
+      ctx.setLineDash([6, 5]);
+      ctx.strokeStyle = 'rgba(0, 220, 255, 0.8)';
+      ctx.lineWidth   = 2;
+      ctx.moveTo(last.x, last.y);
+      for (const p of pred) ctx.lineTo(p.x, p.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // Ball marker
+    if (ball) {
+      // Outer ring
+      ctx.beginPath();
+      ctx.arc(ball.x, ball.y, 13, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+      ctx.lineWidth   = 2;
+      ctx.stroke();
+
+      // Ball dot
+      ctx.beginPath();
+      ctx.arc(ball.x, ball.y, 7, 0, Math.PI * 2);
+      ctx.fillStyle = '#FF3333';
+      ctx.fill();
+      ctx.strokeStyle = '#FFD700';
+      ctx.lineWidth   = 1.5;
+      ctx.stroke();
+
+      // Crosshair
+      ctx.strokeStyle = 'rgba(255, 215, 0, 0.65)';
+      ctx.lineWidth   = 1;
+      const len = 16;
+      ctx.beginPath();
+      ctx.moveTo(ball.x - len, ball.y); ctx.lineTo(ball.x + len, ball.y);
+      ctx.moveTo(ball.x, ball.y - len); ctx.lineTo(ball.x, ball.y + len);
+      ctx.stroke();
+
+    } else if (trajectory.length === 0) {
+      // Hint text
+      ctx.font      = '13px monospace';
+      ctx.fillStyle = 'rgba(255,215,0,0.5)';
+      ctx.fillText('⚾ Point camera at the ball', 14, 30);
+    }
+
+    // Watermark
+    ctx.font      = 'bold 11px monospace';
+    ctx.fillStyle = 'rgba(255,215,0,0.45)';
+    ctx.fillText('DRS', canvas.width - 36, canvas.height - 10);
+  }
+
+  // ── Helpers ───────────────────────────────────
+  function showError(msg) {
+    errorBox.textContent   = msg;
+    errorBox.style.display = 'block';
+    statusText.textContent = '❌ Error';
+  }
+
+  function handleError(err) {
+    if (err.name === 'NotAllowedError') {
+      showError('❌ Camera blocked!\n\nTap the 🔒 lock icon in address bar\n→ Camera → Allow\n→ Refresh the page');
+    } else if (err.name === 'NotFoundError') {
+      showError('❌ No camera found on this device.');
+    } else if (err.name === 'NotReadableError') {
+      showError('❌ Camera is busy.\nClose other apps using the camera.');
+    } else {
+      showError('❌ Error: ' + err.name + '\n' + (err.message || ''));
+    }
+  }
+
+  function resetBtn() {
+    startBtn.disabled    = false;
+    startBtn.textContent = '📷 Start Camera';
+  }
+
+})();
+</script>
 
 </body>
 </html>
