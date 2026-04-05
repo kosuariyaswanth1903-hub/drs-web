@@ -6,68 +6,64 @@
 <title>Ball Speed Tracker</title>
 
 <style>
-    body {
-        margin: 0;
-        background: #0d0d0d;
-        color: #fff;
-        font-family: Arial, sans-serif;
-        text-align: center;
-    }
+body {
+    margin: 0;
+    background: #0d0d0d;
+    color: #fff;
+    font-family: Arial, sans-serif;
+    text-align: center;
+}
 
-    h1 {
-        margin: 10px;
-        font-weight: 600;
-    }
+h1 {
+    margin: 10px;
+}
 
-    #container {
-        position: relative;
-        display: inline-block;
-        margin-top: 10px;
-    }
+#container {
+    position: relative;
+    display: inline-block;
+    margin-top: 10px;
+}
 
-    video, canvas {
-        width: 90vw;
-        max-width: 500px;
-        border-radius: 10px;
-    }
+video, canvas {
+    width: 90vw;
+    max-width: 500px;
+    border-radius: 10px;
+}
 
-    canvas {
-        position: absolute;
-        top: 0;
-        left: 0;
-        pointer-events: none;
-    }
+canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    pointer-events: none;
+}
 
-    button {
-        margin-top: 10px;
-        padding: 10px 20px;
-        background: #00ffcc;
-        border: none;
-        border-radius: 6px;
-        font-size: 16px;
-        cursor: pointer;
-    }
+button {
+    margin-top: 10px;
+    padding: 10px 20px;
+    background: #00ffcc;
+    border: none;
+    border-radius: 6px;
+    font-size: 16px;
+    cursor: pointer;
+}
 
-    #info {
-        margin-top: 10px;
-        font-size: 18px;
-    }
+#info {
+    margin-top: 10px;
+}
 
-    .speed {
-        font-size: 26px;
-        font-weight: bold;
-        color: #00ffcc;
-    }
+.speed {
+    font-size: 26px;
+    color: #00ffcc;
+    font-weight: bold;
+}
 
-    .status {
-        font-size: 14px;
-        color: #aaa;
-    }
+.status {
+    color: #aaa;
+}
 
-    .peak {
-        font-size: 14px;
-        color: #ffcc00;
-    }
+.peak {
+    color: #ffcc00;
+}
 </style>
 </head>
 
@@ -94,72 +90,89 @@ const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
 
 let positions = [];
-let lastTime = performance.now();
 let smoothSpeed = 0;
 let peakSpeed = 0;
 
 const PIXEL_TO_METER = 0.01;
 const FPS = 30;
 
+// ✅ START CAMERA (BACK CAMERA FIX)
 async function startCamera() {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-    video.srcObject = stream;
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { exact: "environment" } }
+        });
 
+        video.srcObject = stream;
+        setupVideo();
+
+        document.getElementById('status').innerText = "Back camera started";
+    } catch (e) {
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: "environment" }
+        });
+
+        video.srcObject = stream;
+        setupVideo();
+
+        document.getElementById('status').innerText = "Using available camera";
+    }
+}
+
+function setupVideo() {
     video.onloadedmetadata = () => {
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
         track();
     };
-
-    document.getElementById('status').innerText = "Camera started...";
 }
 
+// 🎯 MAIN TRACK LOOP
 function track() {
     requestAnimationFrame(track);
 
     if (video.readyState !== 4) return;
 
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
     let frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
     let gray = [];
 
-    // Convert to grayscale
+    // 🔍 Grayscale
     for (let i = 0; i < frame.data.length; i += 4) {
-        let g = (frame.data[i] + frame.data[i+1] + frame.data[i+2]) / 3;
-        gray.push(g);
+        gray.push((frame.data[i] + frame.data[i+1] + frame.data[i+2]) / 3);
     }
 
-    // Simple threshold (detect bright objects)
     let threshold = 200;
-    let candidates = [];
+    let points = [];
 
-    for (let y = 1; y < canvas.height - 1; y += 4) {
-        for (let x = 1; x < canvas.width - 1; x += 4) {
+    // 🎯 Detect bright pixels
+    for (let y = 0; y < canvas.height; y += 4) {
+        for (let x = 0; x < canvas.width; x += 4) {
             let i = y * canvas.width + x;
             if (gray[i] > threshold) {
-                candidates.push({x, y});
+                points.push({x, y});
             }
         }
     }
 
-    if (candidates.length > 20) {
+    if (points.length > 20) {
         let avgX = 0, avgY = 0;
 
-        candidates.forEach(p => {
+        points.forEach(p => {
             avgX += p.x;
             avgY += p.y;
         });
 
-        avgX /= candidates.length;
-        avgY /= candidates.length;
+        avgX /= points.length;
+        avgY /= points.length;
 
         positions.push({x: avgX, y: avgY});
-
         if (positions.length > 40) positions.shift();
 
         drawPath();
         drawBall(avgX, avgY);
-
         calculateSpeed();
 
         document.getElementById('status').innerText = "Tracking...";
@@ -169,6 +182,7 @@ function track() {
     }
 }
 
+// ✨ Draw trail
 function drawPath() {
     ctx.beginPath();
     for (let i = 0; i < positions.length; i++) {
@@ -178,19 +192,21 @@ function drawPath() {
     }
     ctx.strokeStyle = "rgba(0,255,200,0.8)";
     ctx.lineWidth = 3;
-    ctx.shadowBlur = 10;
+    ctx.shadowBlur = 12;
     ctx.shadowColor = "#00ffcc";
     ctx.stroke();
 }
 
+// 🔴 Draw detected ball
 function drawBall(x, y) {
     ctx.beginPath();
     ctx.arc(x, y, 10, 0, Math.PI * 2);
-    ctx.strokeStyle = "#ff0000";
+    ctx.strokeStyle = "red";
     ctx.lineWidth = 2;
     ctx.stroke();
 }
 
+// ⚡ Speed calculation
 function calculateSpeed() {
     if (positions.length < 2) return;
 
@@ -200,15 +216,14 @@ function calculateSpeed() {
     let dx = p2.x - p1.x;
     let dy = p2.y - p1.y;
 
-    let pixelDist = Math.sqrt(dx*dx + dy*dy);
+    let dist = Math.sqrt(dx*dx + dy*dy);
 
-    if (pixelDist < 2) return;
+    if (dist < 2) return;
 
-    let meterDist = pixelDist * PIXEL_TO_METER;
-    let speedMS = meterDist * FPS;
-    let speedKMH = speedMS * 3.6;
+    let meters = dist * PIXEL_TO_METER;
+    let speed = meters * FPS * 3.6;
 
-    smoothSpeed = 0.8 * smoothSpeed + 0.2 * speedKMH;
+    smoothSpeed = 0.8 * smoothSpeed + 0.2 * speed;
 
     if (smoothSpeed > peakSpeed) {
         peakSpeed = smoothSpeed;
