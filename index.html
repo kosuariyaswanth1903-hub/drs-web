@@ -10,18 +10,15 @@ body {
     margin: 0;
     background: #0d0d0d;
     color: #fff;
-    font-family: Arial, sans-serif;
+    font-family: Arial;
     text-align: center;
 }
 
-h1 {
-    margin: 10px;
-}
+h1 { margin: 10px; }
 
 #container {
     position: relative;
     display: inline-block;
-    margin-top: 10px;
 }
 
 video, canvas {
@@ -34,7 +31,6 @@ canvas {
     position: absolute;
     top: 0;
     left: 0;
-    pointer-events: none;
 }
 
 button {
@@ -44,26 +40,12 @@ button {
     border: none;
     border-radius: 6px;
     font-size: 16px;
-    cursor: pointer;
 }
 
-#info {
-    margin-top: 10px;
-}
+.speed { font-size: 24px; color: #00ffcc; }
+.peak { color: #ffcc00; }
+.status { color: #aaa; }
 
-.speed {
-    font-size: 26px;
-    color: #00ffcc;
-    font-weight: bold;
-}
-
-.status {
-    color: #aaa;
-}
-
-.peak {
-    color: #ffcc00;
-}
 </style>
 </head>
 
@@ -78,11 +60,9 @@ button {
     <canvas id="canvas"></canvas>
 </div>
 
-<div id="info">
-    <div class="speed">Speed: <span id="speed">0</span> km/h</div>
-    <div class="peak">Peak: <span id="peak">0</span> km/h</div>
-    <div class="status" id="status">Waiting for camera...</div>
-</div>
+<div class="speed">Speed: <span id="speed">0</span> km/h</div>
+<div class="peak">Peak: <span id="peak">0</span> km/h</div>
+<div class="status" id="status">Waiting...</div>
 
 <script>
 const video = document.getElementById('video');
@@ -96,30 +76,26 @@ let peakSpeed = 0;
 const PIXEL_TO_METER = 0.01;
 const FPS = 30;
 
-// ✅ START CAMERA (BACK CAMERA FIX)
+// 🎥 CAMERA (BACK)
 async function startCamera() {
     try {
         const stream = await navigator.mediaDevices.getUserMedia({
             video: { facingMode: { exact: "environment" } }
         });
-
         video.srcObject = stream;
-        setupVideo();
-
-        document.getElementById('status').innerText = "Back camera started";
-    } catch (e) {
+        setup();
+        status("Back camera started");
+    } catch {
         const stream = await navigator.mediaDevices.getUserMedia({
             video: { facingMode: "environment" }
         });
-
         video.srcObject = stream;
-        setupVideo();
-
-        document.getElementById('status').innerText = "Using available camera";
+        setup();
+        status("Camera started");
     }
 }
 
-function setupVideo() {
+function setup() {
     video.onloadedmetadata = () => {
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
@@ -127,38 +103,36 @@ function setupVideo() {
     };
 }
 
-// 🎯 MAIN TRACK LOOP
+// 🔁 MAIN LOOP
 function track() {
     requestAnimationFrame(track);
 
     if (video.readyState !== 4) return;
 
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.drawImage(video,0,0);
 
-    let frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    let gray = [];
-
-    // 🔍 Grayscale
-    for (let i = 0; i < frame.data.length; i += 4) {
-        gray.push((frame.data[i] + frame.data[i+1] + frame.data[i+2]) / 3);
-    }
-
-    let threshold = 200;
+    let frame = ctx.getImageData(0,0,canvas.width,canvas.height);
     let points = [];
 
-    // 🎯 Detect bright pixels
-    for (let y = 0; y < canvas.height; y += 4) {
-        for (let x = 0; x < canvas.width; x += 4) {
-            let i = y * canvas.width + x;
-            if (gray[i] > threshold) {
-                points.push({x, y});
+    // 🔴 RED BALL DETECTION
+    for (let y=0; y<canvas.height; y+=3) {
+        for (let x=0; x<canvas.width; x+=3) {
+
+            let i = (y * canvas.width + x) * 4;
+
+            let r = frame.data[i];
+            let g = frame.data[i+1];
+            let b = frame.data[i+2];
+
+            if (r > 150 && g < 100 && b < 100 && (r - g > 50)) {
+                points.push({x,y});
             }
         }
     }
 
-    if (points.length > 20) {
-        let avgX = 0, avgY = 0;
+    if (points.length > 30) {
+        let avgX=0, avgY=0;
 
         points.forEach(p => {
             avgX += p.x;
@@ -168,69 +142,73 @@ function track() {
         avgX /= points.length;
         avgY /= points.length;
 
-        positions.push({x: avgX, y: avgY});
+        positions.push({x:avgX,y:avgY});
         if (positions.length > 40) positions.shift();
 
         drawPath();
         drawBall(avgX, avgY);
         calculateSpeed();
 
-        document.getElementById('status').innerText = "Tracking...";
+        status("Tracking...");
     } else {
-        document.getElementById('status').innerText = "Waiting for ball";
+        status("Waiting for ball");
         document.getElementById('speed').innerText = "0";
     }
 }
 
-// ✨ Draw trail
+// ✨ TRAIL
 function drawPath() {
     ctx.beginPath();
-    for (let i = 0; i < positions.length; i++) {
-        let p = positions[i];
-        if (i === 0) ctx.moveTo(p.x, p.y);
-        else ctx.lineTo(p.x, p.y);
-    }
-    ctx.strokeStyle = "rgba(0,255,200,0.8)";
-    ctx.lineWidth = 3;
-    ctx.shadowBlur = 12;
-    ctx.shadowColor = "#00ffcc";
+    positions.forEach((p,i)=>{
+        if(i===0) ctx.moveTo(p.x,p.y);
+        else ctx.lineTo(p.x,p.y);
+    });
+    ctx.strokeStyle="rgba(0,255,200,0.8)";
+    ctx.lineWidth=3;
+    ctx.shadowBlur=10;
+    ctx.shadowColor="#00ffcc";
     ctx.stroke();
 }
 
-// 🔴 Draw detected ball
-function drawBall(x, y) {
+// 🔴 BALL MARK
+function drawBall(x,y){
     ctx.beginPath();
-    ctx.arc(x, y, 10, 0, Math.PI * 2);
-    ctx.strokeStyle = "red";
-    ctx.lineWidth = 2;
+    ctx.arc(x,y,10,0,Math.PI*2);
+    ctx.strokeStyle="red";
+    ctx.lineWidth=2;
     ctx.stroke();
 }
 
-// ⚡ Speed calculation
-function calculateSpeed() {
-    if (positions.length < 2) return;
+// ⚡ SPEED
+function calculateSpeed(){
+    if(positions.length<2) return;
 
-    let p1 = positions[positions.length - 2];
-    let p2 = positions[positions.length - 1];
+    let p1=positions[positions.length-2];
+    let p2=positions[positions.length-1];
 
-    let dx = p2.x - p1.x;
-    let dy = p2.y - p1.y;
+    let dx=p2.x-p1.x;
+    let dy=p2.y-p1.y;
 
-    let dist = Math.sqrt(dx*dx + dy*dy);
+    let dist=Math.sqrt(dx*dx+dy*dy);
 
-    if (dist < 2) return;
+    if(dist<5) return; // ignore noise
 
     let meters = dist * PIXEL_TO_METER;
     let speed = meters * FPS * 3.6;
 
-    smoothSpeed = 0.8 * smoothSpeed + 0.2 * speed;
+    smoothSpeed = 0.8*smoothSpeed + 0.2*speed;
 
-    if (smoothSpeed > peakSpeed) {
+    if(smoothSpeed>peakSpeed){
         peakSpeed = smoothSpeed;
         document.getElementById('peak').innerText = peakSpeed.toFixed(2);
     }
 
     document.getElementById('speed').innerText = smoothSpeed.toFixed(2);
+}
+
+// 🧾 STATUS
+function status(msg){
+    document.getElementById('status').innerText = msg;
 }
 </script>
 
