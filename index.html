@@ -2,629 +2,221 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
-<title>DRS - Ball Speed Tracker</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ball Speed Tracker</title>
 
 <style>
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-  user-select: none;
-  -webkit-tap-highlight-color: transparent;
-}
+    body {
+        margin: 0;
+        background: #0d0d0d;
+        color: #fff;
+        font-family: Arial, sans-serif;
+        text-align: center;
+    }
 
-body {
-  background: linear-gradient(145deg, #0a1a1f 0%, #061013 100%);
-  font-family: 'Segoe UI', system-ui, sans-serif;
-  min-height: 100vh;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  padding: 16px;
-}
+    h1 {
+        margin: 10px;
+        font-weight: 600;
+    }
 
-.container {
-  max-width: 640px;
-  width: 100%;
-  background: rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(10px);
-  border-radius: 48px;
-  padding: 20px 16px 24px;
-  box-shadow: 0 20px 35px rgba(0, 0, 0, 0.5);
-  border: 1px solid rgba(255, 215, 0, 0.4);
-}
+    #container {
+        position: relative;
+        display: inline-block;
+        margin-top: 10px;
+    }
 
-h2 {
-  text-align: center;
-  color: #FFE484;
-  font-size: 28px;
-  margin-bottom: 16px;
-  letter-spacing: 2px;
-}
+    video, canvas {
+        width: 90vw;
+        max-width: 500px;
+        border-radius: 10px;
+    }
 
-.canvas-wrap {
-  position: relative;
-  width: 100%;
-  aspect-ratio: 4 / 3;
-  background: #000;
-  border-radius: 28px;
-  overflow: hidden;
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.6);
-  margin-bottom: 20px;
-  border: 2px solid rgba(255, 200, 50, 0.4);
-}
+    canvas {
+        position: absolute;
+        top: 0;
+        left: 0;
+        pointer-events: none;
+    }
 
-video, canvas {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  border-radius: 26px;
-}
+    button {
+        margin-top: 10px;
+        padding: 10px 20px;
+        background: #00ffcc;
+        border: none;
+        border-radius: 6px;
+        font-size: 16px;
+        cursor: pointer;
+    }
 
-canvas {
-  pointer-events: none;
-  z-index: 2;
-}
+    #info {
+        margin-top: 10px;
+        font-size: 18px;
+    }
 
-video {
-  z-index: 1;
-  filter: brightness(1.05) contrast(1.08);
-}
+    .speed {
+        font-size: 26px;
+        font-weight: bold;
+        color: #00ffcc;
+    }
 
-button {
-  width: 100%;
-  background: radial-gradient(circle at 30% 10%, #ffd966, #e6b422);
-  border: none;
-  padding: 16px 12px;
-  font-size: 22px;
-  font-weight: bold;
-  color: #1a2e36;
-  border-radius: 60px;
-  box-shadow: 0 6px 0 #8b5e1a;
-  transition: all 0.07s linear;
-  cursor: pointer;
-  font-family: inherit;
-  margin-bottom: 20px;
-}
+    .status {
+        font-size: 14px;
+        color: #aaa;
+    }
 
-button:active {
-  transform: translateY(3px);
-  box-shadow: 0 2px 0 #8b5e1a;
-}
-
-.info-panel {
-  background: rgba(10, 20, 24, 0.85);
-  backdrop-filter: blur(12px);
-  border-radius: 36px;
-  padding: 20px;
-  text-align: center;
-  border: 1px solid rgba(255, 215, 0, 0.3);
-}
-
-.speed-box {
-  text-align: center;
-}
-
-.speed-label {
-  font-size: 14px;
-  letter-spacing: 2px;
-  font-weight: 500;
-  color: #9ec8d9;
-  text-transform: uppercase;
-  margin-bottom: 10px;
-}
-
-.speed-value {
-  font-size: 72px;
-  font-weight: 900;
-  color: #F2C94C;
-  line-height: 1;
-  font-family: monospace;
-  text-shadow: 0 0 20px rgba(242, 201, 76, 0.5);
-}
-
-.speed-unit {
-  font-size: 24px;
-  color: #c0e0e8;
-  font-weight: 500;
-}
-
-.status {
-  margin-top: 12px;
-  font-size: 14px;
-  color: #FFE484;
-  font-weight: 500;
-}
-
-.ball-indicator {
-  margin-top: 12px;
-  font-size: 12px;
-  color: #9ec8d9;
-}
-
-.error-msg {
-  background: #b91c1ccc;
-  color: #ffe0b5;
-  border-radius: 40px;
-  padding: 10px 18px;
-  font-size: 13px;
-  text-align: center;
-  margin-top: 14px;
-  font-weight: 500;
-}
-
-.footer {
-  text-align: center;
-  font-size: 11px;
-  color: #688e9b;
-  margin-top: 16px;
-}
+    .peak {
+        font-size: 14px;
+        color: #ffcc00;
+    }
 </style>
 </head>
 
 <body>
 
-<div class="container">
-  <h2>🏏 BALL SPEED TRACKER</h2>
+<h1>Ball Speed Tracker</h1>
 
-  <div class="canvas-wrap">
-    <video id="video" autoplay playsinline muted></video>
+<button onclick="startCamera()">Start Camera</button>
+
+<div id="container">
+    <video id="video" autoplay playsinline></video>
     <canvas id="canvas"></canvas>
-  </div>
+</div>
 
-  <button id="startBtn">📷 START CAMERA</button>
-
-  <div class="info-panel">
-    <div class="speed-box">
-      <div class="speed-label">BALL SPEED</div>
-      <div class="speed-value"><span id="speed">0</span><span class="speed-unit"> km/h</span></div>
-    </div>
-    <div class="status" id="status">⚡ READY</div>
-    <div class="ball-indicator" id="ballIndicator">⚾ No ball detected</div>
-  </div>
-
-  <div id="errorMsg" class="error-msg" style="display: none;"></div>
-  <div class="footer">⚡ Track ONLY white ball | Real-time speed</div>
+<div id="info">
+    <div class="speed">Speed: <span id="speed">0</span> km/h</div>
+    <div class="peak">Peak: <span id="peak">0</span> km/h</div>
+    <div class="status" id="status">Waiting for camera...</div>
 </div>
 
 <script>
-const video = document.getElementById("video");
-const canvas = document.getElementById("canvas");
-const ctx = canvas.getContext("2d");
-const startBtn = document.getElementById("startBtn");
-const statusText = document.getElementById("status");
-const speedText = document.getElementById("speed");
-const ballIndicator = document.getElementById("ballIndicator");
-const errorDiv = document.getElementById("errorMsg");
+const video = document.getElementById('video');
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
 
-// Tracking variables
-let stream = null;
-let animationId = null;
-let processingActive = false;
+let positions = [];
+let lastTime = performance.now();
+let smoothSpeed = 0;
+let peakSpeed = 0;
 
-// Ball-specific tracking
-let ballTrajectory = [];  // Only stores ball positions
-let lastBallPos = null;
-let lastSpeed = 0;
-let ballDetected = false;
-let noBallCounter = 0;
+const PIXEL_TO_METER = 0.01;
+const FPS = 30;
 
-// Performance optimization
-const tempCanvas = document.createElement('canvas');
-const tempCtx = tempCanvas.getContext('2d');
+async function startCamera() {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    video.srcObject = stream;
 
-// Ball characteristics (cricket ball specific)
-const MIN_BALL_SIZE = 8;      // Minimum radius in pixels
-const MAX_BALL_SIZE = 25;     // Maximum radius in pixels
-const MIN_BRIGHTNESS = 170;    // White ball is bright
-const MAX_VARIANCE = 80;       // White ball has balanced colors
+    video.onloadedmetadata = () => {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        track();
+    };
 
-// Speed calibration
-const PX_TO_KMH = 0.32;
-
-function showError(msg, isError = true) {
-  errorDiv.style.display = 'block';
-  errorDiv.textContent = msg;
-  errorDiv.style.background = isError ? '#b91c1ccc' : '#2c5a2ecc';
-  setTimeout(() => {
-    if (errorDiv.style.display === 'block') {
-      errorDiv.style.display = 'none';
-    }
-  }, 4000);
+    document.getElementById('status').innerText = "Camera started...";
 }
 
-// Detect ball size (radius) around candidate point
-function detectBallSize(imageData, width, height, centerX, centerY) {
-  const data = imageData.data;
-  let radius = 0;
-  let whitePixels = 0;
-  
-  // Check surrounding pixels to determine ball size
-  for (let r = 5; r <= 25; r += 2) {
-    let edgeCount = 0;
-    let totalSamples = 0;
-    
-    for (let angle = 0; angle < 360; angle += 30) {
-      const rad = angle * Math.PI / 180;
-      const x = centerX + r * Math.cos(rad);
-      const y = centerY + r * Math.sin(rad);
-      
-      if (x > 0 && x < width && y > 0 && y < height) {
-        const idx = (Math.floor(y) * width + Math.floor(x)) * 4;
-        const rVal = data[idx];
-        const gVal = data[idx+1];
-        const bVal = data[idx+2];
-        const brightness = (rVal + gVal + bVal) / 3;
-        
-        if (brightness > MIN_BRIGHTNESS) {
-          edgeCount++;
-        }
-        totalSamples++;
-      }
+function track() {
+    requestAnimationFrame(track);
+
+    if (video.readyState !== 4) return;
+
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    let frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    let gray = [];
+
+    // Convert to grayscale
+    for (let i = 0; i < frame.data.length; i += 4) {
+        let g = (frame.data[i] + frame.data[i+1] + frame.data[i+2]) / 3;
+        gray.push(g);
     }
-    
-    // If most edge points are white, this is within ball area
-    if (edgeCount / totalSamples > 0.6) {
-      radius = r;
+
+    // Simple threshold (detect bright objects)
+    let threshold = 200;
+    let candidates = [];
+
+    for (let y = 1; y < canvas.height - 1; y += 4) {
+        for (let x = 1; x < canvas.width - 1; x += 4) {
+            let i = y * canvas.width + x;
+            if (gray[i] > threshold) {
+                candidates.push({x, y});
+            }
+        }
+    }
+
+    if (candidates.length > 20) {
+        let avgX = 0, avgY = 0;
+
+        candidates.forEach(p => {
+            avgX += p.x;
+            avgY += p.y;
+        });
+
+        avgX /= candidates.length;
+        avgY /= candidates.length;
+
+        positions.push({x: avgX, y: avgY});
+
+        if (positions.length > 40) positions.shift();
+
+        drawPath();
+        drawBall(avgX, avgY);
+
+        calculateSpeed();
+
+        document.getElementById('status').innerText = "Tracking...";
     } else {
-      break;
+        document.getElementById('status').innerText = "Waiting for ball";
+        document.getElementById('speed').innerText = "0";
     }
-  }
-  
-  return radius;
 }
 
-// Enhanced ball detection with size filtering
-function detectBall(imageData, width, height) {
-  const data = imageData.data;
-  let candidates = [];
-  
-  // Scan in steps for performance
-  const step = 3;
-  
-  for (let y = step; y < height - step; y += step) {
-    for (let x = step; x < width - step; x += step) {
-      const idx = (y * width + x) * 4;
-      const r = data[idx];
-      const g = data[idx+1];
-      const b = data[idx+2];
-      
-      const brightness = (r + g + b) / 3;
-      const variance = Math.abs(r - g) + Math.abs(g - b) + Math.abs(b - r);
-      
-      // Ball must be white/bright and have balanced colors
-      if (brightness > MIN_BRIGHTNESS && variance < MAX_VARIANCE) {
-        // Check ball size
-        const ballSize = detectBallSize(imageData, width, height, x, y);
-        
-        if (ballSize >= MIN_BALL_SIZE && ballSize <= MAX_BALL_SIZE) {
-          candidates.push({
-            x: x,
-            y: y,
-            score: brightness - variance,
-            size: ballSize
-          });
-        }
-      }
-    }
-  }
-  
-  if (candidates.length === 0) return null;
-  
-  // Sort by score and get best candidate
-  candidates.sort((a, b) => b.score - a.score);
-  const best = candidates[0];
-  
-  // Temporal consistency - ball must move consistently
-  if (lastBallPos) {
-    const movement = Math.hypot(best.x - lastBallPos.x, best.y - lastBallPos.y);
-    
-    // If movement is too small and we already have trajectory, might be false positive
-    if (movement < 2 && ballTrajectory.length > 5) {
-      return null;
-    }
-    
-    // If movement is huge (jump), ignore
-    if (movement > 100 && ballTrajectory.length > 0) {
-      return null;
-    }
-  }
-  
-  return { 
-    x: best.x, 
-    y: best.y, 
-    time: performance.now(),
-    size: best.size
-  };
-}
-
-// Calculate speed using only ball trajectory
-function calculateBallSpeed() {
-  if (ballTrajectory.length < 3) return 0;  // Need at least 3 points for accuracy
-  
-  // Use last 2 valid points
-  const p1 = ballTrajectory[ballTrajectory.length - 2];
-  const p2 = ballTrajectory[ballTrajectory.length - 1];
-  
-  const distance = Math.hypot(p2.x - p1.x, p2.y - p1.y);
-  const timeDelta = (p2.time - p1.time) / 1000;
-  
-  if (timeDelta < 0.001) return lastSpeed;
-  
-  let rawSpeed = (distance / timeDelta) * PX_TO_KMH;
-  
-  // Realistic cricket ball speeds (20-160 km/h)
-  rawSpeed = Math.min(160, Math.max(0, rawSpeed));
-  
-  // Smoothing for stable display
-  const smoothedSpeed = lastSpeed * 0.5 + rawSpeed * 0.5;
-  lastSpeed = smoothedSpeed;
-  
-  return Math.round(smoothedSpeed);
-}
-
-// Draw ball highlight on canvas
-function drawBallHighlight(ball) {
-  if (!ctx || !ball) return;
-  
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.save();
-  
-  // Draw trajectory line
-  if (ballTrajectory.length >= 2) {
+function drawPath() {
     ctx.beginPath();
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = '#FFD966';
-    ctx.shadowBlur = 4;
-    ctx.shadowColor = '#FFA500';
-    
-    ctx.moveTo(ballTrajectory[0].x, ballTrajectory[0].y);
-    for (let i = 1; i < ballTrajectory.length; i++) {
-      ctx.lineTo(ballTrajectory[i].x, ballTrajectory[i].y);
+    for (let i = 0; i < positions.length; i++) {
+        let p = positions[i];
+        if (i === 0) ctx.moveTo(p.x, p.y);
+        else ctx.lineTo(p.x, p.y);
     }
+    ctx.strokeStyle = "rgba(0,255,200,0.8)";
+    ctx.lineWidth = 3;
+    ctx.shadowBlur = 10;
+    ctx.shadowColor = "#00ffcc";
     ctx.stroke();
-  }
-  
-  // Draw trail dots
-  for (let i = 0; i < ballTrajectory.length; i++) {
-    const point = ballTrajectory[i];
-    const alpha = 0.4 + (i / ballTrajectory.length) * 0.6;
+}
+
+function drawBall(x, y) {
     ctx.beginPath();
-    ctx.fillStyle = `rgba(255, 220, 100, ${alpha})`;
-    ctx.arc(point.x, point.y, 4, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  
-  // Draw current ball
-  ctx.shadowBlur = 12;
-  ctx.shadowColor = '#FF6600';
-  
-  // Outer glow
-  ctx.beginPath();
-  ctx.arc(ball.x, ball.y, ball.size || 10, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(255, 200, 50, 0.3)';
-  ctx.fill();
-  
-  // Ball core
-  ctx.beginPath();
-  ctx.arc(ball.x, ball.y, (ball.size || 10) - 2, 0, Math.PI * 2);
-  ctx.fillStyle = '#FFE484';
-  ctx.fill();
-  
-  // Highlight
-  ctx.beginPath();
-  ctx.arc(ball.x - 2, ball.y - 2, 3, 0, Math.PI * 2);
-  ctx.fillStyle = '#FFFFFF';
-  ctx.fill();
-  
-  ctx.restore();
+    ctx.arc(x, y, 10, 0, Math.PI * 2);
+    ctx.strokeStyle = "#ff0000";
+    ctx.lineWidth = 2;
+    ctx.stroke();
 }
 
-// Main frame processor
-function processFrame() {
-  if (!processingActive || !video.videoWidth || !video.videoHeight) {
-    return;
-  }
-  
-  // Sync canvas
-  if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    tempCanvas.width = canvas.width;
-    tempCanvas.height = canvas.height;
-  }
-  
-  // Capture frame
-  tempCtx.drawImage(video, 0, 0, canvas.width, canvas.height);
-  const imageData = tempCtx.getImageData(0, 0, canvas.width, canvas.height);
-  
-  // Detect ONLY ball
-  const ball = detectBall(imageData, canvas.width, canvas.height);
-  
-  if (ball) {
-    // Valid ball detected
-    ballTrajectory.push(ball);
-    lastBallPos = ball;
-    ballDetected = true;
-    noBallCounter = 0;
-    
-    // Keep trajectory limited
-    if (ballTrajectory.length > 30) {
-      ballTrajectory.shift();
+function calculateSpeed() {
+    if (positions.length < 2) return;
+
+    let p1 = positions[positions.length - 2];
+    let p2 = positions[positions.length - 1];
+
+    let dx = p2.x - p1.x;
+    let dy = p2.y - p1.y;
+
+    let pixelDist = Math.sqrt(dx*dx + dy*dy);
+
+    if (pixelDist < 2) return;
+
+    let meterDist = pixelDist * PIXEL_TO_METER;
+    let speedMS = meterDist * FPS;
+    let speedKMH = speedMS * 3.6;
+
+    smoothSpeed = 0.8 * smoothSpeed + 0.2 * speedKMH;
+
+    if (smoothSpeed > peakSpeed) {
+        peakSpeed = smoothSpeed;
+        document.getElementById('peak').innerText = peakSpeed.toFixed(2);
     }
-    
-    // Update speed
-    const speed = calculateBallSpeed();
-    speedText.innerText = speed;
-    statusText.innerHTML = "🟢 TRACKING BALL";
-    ballIndicator.innerHTML = "⚾ Ball detected! Speed: " + speed + " km/h";
-    ballIndicator.style.color = "#FFE484";
-    
-    // Draw ball highlight
-    drawBallHighlight(ball);
-    
-  } else {
-    // No ball detected
-    noBallCounter++;
-    
-    if (noBallCounter > 10) {
-      ballDetected = false;
-      statusText.innerHTML = "⚡ WAITING FOR BALL";
-      ballIndicator.innerHTML = "⚾ No ball detected - position white ball in frame";
-      ballIndicator.style.color = "#9ec8d9";
-      
-      // Don't clear speed immediately, keep last known
-      if (noBallCounter > 30) {
-        // Clear trajectory after 1 second of no ball
-        ballTrajectory = [];
-        lastBallPos = null;
-        // Don't reset speed immediately - keep showing last valid speed
-      }
-    }
-    
-    // Clear canvas
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = "#FFFFFF20";
-    ctx.font = "14px system-ui";
-    ctx.textAlign = "center";
-    ctx.fillText("Place white ball in frame", canvas.width/2, canvas.height/2);
-    ctx.textAlign = "left";
-  }
+
+    document.getElementById('speed').innerText = smoothSpeed.toFixed(2);
 }
-
-// Animation loop
-function trackingLoop() {
-  if (!processingActive) return;
-  processFrame();
-  animationId = requestAnimationFrame(trackingLoop);
-}
-
-// Stop camera
-async function stopCamera() {
-  processingActive = false;
-  
-  if (animationId) {
-    cancelAnimationFrame(animationId);
-    animationId = null;
-  }
-  
-  if (stream) {
-    stream.getTracks().forEach(track => track.stop());
-    stream = null;
-  }
-  
-  video.srcObject = null;
-  ballTrajectory = [];
-  lastBallPos = null;
-  ballDetected = false;
-  lastSpeed = 0;
-  speedText.innerText = "0";
-  statusText.innerHTML = "⚡ READY";
-  ballIndicator.innerHTML = "⚾ No ball detected";
-}
-
-// Start camera
-async function initCamera() {
-  await stopCamera();
-  showError("", false);
-  statusText.innerHTML = "📷 STARTING...";
-  
-  ballTrajectory = [];
-  lastBallPos = null;
-  ballDetected = false;
-  lastSpeed = 0;
-  speedText.innerText = "0";
-  
-  const constraints = {
-    video: {
-      facingMode: { exact: "environment" },
-      width: { ideal: 1280 },
-      height: { ideal: 720 }
-    }
-  };
-  
-  try {
-    const mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
-    stream = mediaStream;
-    video.srcObject = mediaStream;
-    video.setAttribute('playsinline', true);
-    await video.play();
-    
-    await new Promise((resolve) => {
-      if (video.videoWidth) {
-        resolve();
-      } else {
-        video.onloadedmetadata = () => resolve();
-      }
-    });
-    
-    processingActive = true;
-    statusText.innerHTML = "🟢 READY - SHOW BALL";
-    ballIndicator.innerHTML = "⚾ Move white ball in front of camera";
-    showError("Camera ready! Place a WHITE BALL in frame", false);
-    
-    if (animationId) cancelAnimationFrame(animationId);
-    animationId = requestAnimationFrame(trackingLoop);
-    
-  } catch (err) {
-    console.error(err);
-    let errorMessage = "";
-    
-    if (err.name === 'NotAllowedError') {
-      errorMessage = "Camera permission denied";
-    } else if (err.name === 'NotFoundError') {
-      errorMessage = "No camera found";
-    } else {
-      errorMessage = "Camera access failed";
-      
-      // Try default camera
-      try {
-        const fallbackStream = await navigator.mediaDevices.getUserMedia({ video: true });
-        stream = fallbackStream;
-        video.srcObject = fallbackStream;
-        await video.play();
-        processingActive = true;
-        statusText.innerHTML = "🟢 READY";
-        animationId = requestAnimationFrame(trackingLoop);
-        showError("Using default camera", false);
-        return;
-      } catch (fallbackErr) {
-        errorMessage = "No camera available";
-      }
-    }
-    
-    showError(errorMessage, true);
-    statusText.innerHTML = "❌ ERROR";
-    processingActive = false;
-  }
-}
-
-// Event listener
-startBtn.addEventListener('click', initCamera);
-
-// Initial canvas placeholder
-canvas.width = 640;
-canvas.height = 480;
-ctx.fillStyle = "#0a1a1f";
-ctx.fillRect(0, 0, 640, 480);
-ctx.fillStyle = "#ffdd88";
-ctx.font = "16px system-ui";
-ctx.textAlign = "center";
-ctx.fillText("🏏 BALL SPEED TRACKER", 320, 240);
-ctx.font = "12px system-ui";
-ctx.fillStyle = "#aaaaaa";
-ctx.fillText("Tap START CAMERA & show white ball", 320, 290);
-ctx.textAlign = "left";
-
-// Cleanup
-window.addEventListener('beforeunload', () => {
-  if (stream) stream.getTracks().forEach(t => t.stop());
-  if (animationId) cancelAnimationFrame(animationId);
-});
 </script>
 
 </body>
